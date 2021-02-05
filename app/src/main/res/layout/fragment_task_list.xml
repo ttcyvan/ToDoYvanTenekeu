@@ -19,7 +19,7 @@
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintEnd_toEndOf="parent"
         app:rippleColor="@color/white"
-         />
+        app:srcCompat="@drawable/add_cercle" />
 
     <androidx.recyclerview.widget.RecyclerView
         android:id="@+id/recycler_view"
