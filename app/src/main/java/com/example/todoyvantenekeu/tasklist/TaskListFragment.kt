@@ -1,68 +1,131 @@
 package com.example.todoyvantenekeu.tasklist
-
+import android.app.Activity
+import android.content.Intent
 import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import android.widget.ImageView
 import android.widget.TextView
 import androidx.fragment.app.Fragment
+import androidx.fragment.app.viewModels
+import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.observe
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
+import coil.load
+import com.google.android.material.floatingactionbutton.FloatingActionButton
 import com.example.todoyvantenekeu.R
-import java.util.*
+import com.example.todoyvantenekeu.network.Api
+import com.example.todoyvantenekeu.task.TaskActivity
+import com.example.todoyvantenekeu.userinfo.UserInfoActivity
+import kotlinx.coroutines.launch
+class TaskListFragment : Fragment() {
+    companion object {
+        const val ADD_TASK_REQUEST_CODE = 666
+        const val KEY_EDIT = "reply_key_edit"
+        const val USER_INFO_REQUEST_CODE = 777
 
-class TaskListFragment : Fragment(){
-    //private val taskList = listOf("Task 1", "Task 2", "Task 3","Task 1", "Task 2", "Task 3","Task 1", "Task 2", "Task 3","Task 1", "Task 2", "Task 3","Task 1", "Task 2", "Task 3","Task 1", "Task 2", "Task 3","Task 1", "Task 2", "Task 3")
-    private val taskList = mutableListOf(
-            Task(id = "id_1", title = "Task 1", description = "description 1"),
-            Task(id = "id_2", title = "Task 2"),
-            Task(id = "id_3", title = "Task 3")
-    )
+    }
+
+    private val viewModel: TasksViewModel by viewModels()
     private val adapter = TaskListAdapter()
 
     override fun onCreateView(
-        inflater: LayoutInflater,
-        container: ViewGroup?,
-        savedInstanceState: Bundle?
+            inflater: LayoutInflater,
+            container: ViewGroup?,
+            savedInstanceState: Bundle?
     ): View? {
-         return inflater.inflate(R.layout.fragment_task_list, container, false)
+        val rooterView = inflater.inflate(R.layout.fragment_task_list, container, false)
+        viewModel.tasklist.observe(viewLifecycleOwner) { newList ->
+            adapter.submitList(newList)
+        }
+        return rooterView
     }
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
+        // Pour une [RecyclerView] ayant l'id "recycler_view":
         val recyclerView = view.findViewById<RecyclerView>(R.id.recycler_view)
-        val floating_button = view.findViewById<RecyclerView>(R.id.add_task)
         recyclerView.layoutManager = LinearLayoutManager(activity)
-        recyclerView.adapter = TaskListAdapter(taskList)
-        floating_button.setOnClickListener {
-            taskList.add(Task(id = UUID.randomUUID().toString(), title = "Task ${taskList + 1}"))
-            adapter.submitList(taskList.toList())
-        }
-    }
-}
+        recyclerView.adapter = adapter
 
-class TaskListAdapter(private val taskList: List<Task>): RecyclerView.Adapter<TaskListAdapter.TaskViewHolder>(){
-    inner class TaskViewHolder(itemView: View) : RecyclerView.ViewHolder(itemView) {
-        fun bind(taskTitle: List<Task>) {
-            itemView.apply {
-                val tv = itemView.findViewById<TextView>(R.id.task_title)
-                tv.text = taskTitle.toString()
+        adapter.onDeleteTask = { task ->
+            lifecycleScope.launch {
+                viewModel.deleteTask(task)
+
+            }
+            viewModel.tasklist.observe(viewLifecycleOwner) { list ->
+                adapter.submitList(list)
+            }
+        }
+
+        val openTaskActivity = view.findViewById<FloatingActionButton>(R.id.add_task)
+
+        openTaskActivity.setOnClickListener {
+            val intent = Intent(activity, TaskActivity::class.java)
+            startActivityForResult(intent, ADD_TASK_REQUEST_CODE)
+        }
+
+        adapter.onEditTask = { task ->
+            val intent = Intent(activity, TaskActivity::class.java)
+            intent.putExtra(KEY_EDIT, task)
+            startActivityForResult(intent, ADD_TASK_REQUEST_CODE)
+        }
+
+        val avatar = view?.findViewById<ImageView>(R.id.avatar)
+        avatar.setOnClickListener {
+            val intent = Intent(activity, UserInfoActivity::class.java)
+            startActivityForResult(intent, USER_INFO_REQUEST_CODE)
+        }
+
+    }
+
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode === ADD_TASK_REQUEST_CODE && resultCode == Activity.RESULT_OK) {
+            val task = data!!.getSerializableExtra(TaskActivity.KEY) as Task
+
+            if (data!!.getSerializableExtra(TaskActivity.OLD_KEY) != null) {
+                lifecycleScope.launch {
+                    viewModel.updateTask(task)
+                    viewModel.tasklist.observe(viewLifecycleOwner) { list ->
+                        adapter.submitList(list)
+                    }
+                }
+
+            } else {
+                lifecycleScope.launch {
+                    viewModel.createTask(task)
+                    viewModel.tasklist.observe(viewLifecycleOwner) { list ->
+                        adapter.submitList(list)
+
+                    }
+                }
             }
         }
     }
 
-    override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): TaskViewHolder {
-        val view = LayoutInflater.from(parent.context).inflate(R.layout.item_task, parent,false)
-        return TaskViewHolder(view)
-    }
+    override fun onResume() {
+        super.onResume()
+        lifecycleScope.launch {
+            val user = Api.userService.getInfo().body()!!
+            val textUser = view?.findViewById<TextView>(R.id.user)
+            textUser?.text = "${user.firstName} ${user.lastName}"
+            //val tasks = Api.taskWebService.getTasks().body()!!
+        }
 
-    override fun getItemCount(): Int {
-        return taskList.count()
-    }
+        lifecycleScope.launch {
+            viewModel.refresh()
+        }
 
-    override fun onBindViewHolder(holder: TaskViewHolder, position: Int) {
-        holder.bind(taskList)
-    }
+        lifecycleScope.launch{
+            val user = Api.userService.getInfo().body()!!
+            val avatar = view?.findViewById<ImageView>(R.id.avatar)
+            avatar?.load(user.avatar) {
+                placeholder(R.drawable.ic_baseline_brightness_high_24)
+            }
+        }
 
+    }
 }
-
